@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  # Phase 1: Socket - Python
+  python-socket-service:
+    build: ./python-socket-lab
+    ports:
+      - "8080:8080"
+    container_name: socket-service
+
+  # Phase 2: REST API - Python Flask
+  python-rest-service:
+    build: ./python-rest-lab
+    ports:
+      - "5000:5000"
+    container_name: rest-api-service
+
+  # Phase 3: gRPC - Python
+  python-grpc-service:
+    build: ./python-grpc-lab
+    ports:
+      - "50052:50052"
+    container_name: grpc-service

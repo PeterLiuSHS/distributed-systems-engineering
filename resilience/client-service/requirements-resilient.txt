@@ -1,0 +1,3 @@
+requests==2.31.0
+pybreaker==0.8.0
+tenacity==8.2.3

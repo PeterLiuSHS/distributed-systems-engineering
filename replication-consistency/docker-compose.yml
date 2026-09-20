@@ -1,0 +1,45 @@
+services:
+  app:
+    image: python:3.8
+    volumes:
+      - ./:/app
+    command: tail -f /dev/null  
+    networks:
+      - mongo-network
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+  mongo1:
+    image: mongo:latest
+    container_name: mongo1
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongo1-data:/data/db
+    networks:
+      - mongo-network
+    command: mongod --replSet rs0 --bind_ip_all
+  mongo2:
+    image: mongo:latest
+    container_name: mongo2
+    ports:
+      - "27018:27017"
+    volumes:
+      - ./mongo2-data:/data/db
+    networks:
+      - mongo-network
+    command: mongod --replSet rs0 --bind_ip_all
+  mongo3:
+    image: mongo:latest
+    container_name: mongo3
+    ports:
+      - "27019:27017"
+    volumes:
+      - ./mongo3-data:/data/db
+    networks:
+      - mongo-network
+    command: mongod --replSet rs0 --bind_ip_all
+networks:
+  mongo-network:
+    driver: bridge
