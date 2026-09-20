@@ -1,419 +1,223 @@
-# Synchronous Communication Patterns
+# Service Communication & Benchmarking
 
-## Table of Contents
+A hands-on comparison of synchronous communication patterns in distributed systems using **TCP sockets**, **REST**, and **gRPC**.
 
-- [Project Overview](#project-overview)
-- [Directory Structure](#directory-structure)
-- [System Design & Implementation](#system-design--implementation)
-  - [Phase 1: Socket Implementation](#phase-1-socket-implementation)
-  - [Phase 2: REST API Implementation](#phase-2-rest-api-implementation)
-  - [Phase 3: gRPC Implementation](#phase-3-grpc-implementation)
-  - [Phase 4: REST vs gRPC Benchmark Comparison](#phase-4-rest-vs-grpc-benchmark-comparison)
-- [Conclusion](#conclusion)
-- [References](#references)
+The experiment implements the same request-response concept at different abstraction levels and benchmarks REST and gRPC under the same local containerized environment.
 
----
+## Overview
 
-## Project Overview
+This module explores three approaches to synchronous service communication:
 
-This project demonstrates **synchronous request–response communication** using three technologies:
+- **TCP Sockets** — low-level client-server communication using Python's socket library.
+- **REST** — HTTP-based CRUD APIs using Flask and JSON.
+- **gRPC** — strongly typed RPC communication using Protocol Buffers.
 
-- **Raw TCP Sockets** — low-level synchronous data exchange with Python's built-in socket library.  
-- **REST API (Flask)** — HTTP-based synchronous CRUD communication.  
-- **gRPC** — modern, high-performance RPC using Protocol Buffers.  
+All services are containerized with Docker, and a benchmark compares REST and gRPC across repeated CRUD operations.
 
-A **benchmark module** compares REST and gRPC performance under identical conditions.
-All services are containerized using **Docker** and orchestrated via **docker-compose** for reproducible testing.
+## Architecture
 
----
-
-## Directory Structure
-
-Below is the complete project layout as implemented locally in  
-`Distributed-systems-lab1`:
-
-lab1/  
-├── python-grpc-lab/  
-│ ├── generated/  
-│ │ ├── **init**.py  
-│ │ ├── user_service_pb2.py  
-│ │ └── user_service_pb2_grpc.py  
-│ ├── proto/  
-│ │ └── user_service.proto  
-│ ├── client.py  
-│ ├── server.py  
-│ ├── requirements.txt  
-│ └── .idea/  
-│  
-├── python-rest-lab/  
-│ ├── app.py  
-│ ├── models.py  
-│ ├── Dockerfile  
-│ ├── requirements.txt  
-│ └── .idea/  
-│  
-├── python-socket-lab/  
-│ ├── client.py  
-│ ├── server.py  
-│ ├── Dockerfile  
-│ ├── requirements.txt  
-│ └── .idea/  
-│  
-├── benchmark.py  
-├── docker-compose.yml  
+```text
+communication/
+├── tcp/
+│   ├── client.py
+│   ├── server.py
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── rest/
+│   ├── app.py
+│   ├── models.py
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── grpc/
+│   ├── proto/
+│   │   └── user_service.proto
+│   ├── generated/
+│   │   ├── user_service_pb2.py
+│   │   └── user_service_pb2_grpc.py
+│   ├── client.py
+│   ├── server.py
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── benchmark.py
+├── docker-compose.yml
 └── README.md
-
----
-
-## System Design & Implementation
-
-### Phase 1: Socket Implementation
-
-**Tech Stack:** Python socket library + TCP protocol  
-This phase demonstrates fundamental synchronous client–server communication via blocking sockets.  
-The server listens for connections, processes messages sequentially, and responds before moving to the next client.
-
-#### Example Code
-
-**Server (`server.py`):**
-
-```python
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_socket.bind(("0.0.0.0", 8080))
-server_socket.listen(3)
-print("Server is listening on port 8080")
-
-while True:
-    client_socket, addr = server_socket.accept()
-    print("Connected from", addr)
-    data = client_socket.recv(1024)
-    response = data.decode().upper()
-    client_socket.send(response.encode())
-    client_socket.close()ose()
 ```
 
-**Client (`client.py`):**
+## TCP Sockets
 
-```
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client_socket.connect(("127.0.0.1", 8080))
-client_socket.send(b"hello server")
-response = client_socket.recv(1024)
-print("Server response:", response.decode())
-client_socket.close()
-```
+The TCP implementation demonstrates synchronous communication at the transport layer.
 
-#### Test Results
+The server:
 
-1️⃣ **Normal Communication**
+- Listens for incoming TCP connections.
+- Accepts one client connection at a time.
+- Receives a message using a blocking `recv()` call.
+- Processes the message and returns a response.
+- Handles connection and endpoint errors.
 
-```
-Connected to localhost:8080
-Sending: hello server
-Server response: HELLO SERVER
-```
+The client establishes a connection, sends a message, and blocks until the server responds.
 
-2️⃣ **Wrong Port Simulation**
-
-```powershell
-$env:PORT=9999
-python client.py
+```text
+Client
+  │
+  │ TCP connection
+  ▼
+TCP Server
+  │
+  │ Process request
+  ▼
+Response
 ```
 
-```
-ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it.
-```
+Failure scenarios were also tested, including:
 
-3️⃣ **Invalid Hostname Simulation**
+- Connection to an unavailable port.
+- Invalid hostname resolution.
+- Connection timeout handling.
 
-```$env:APP="no_such_host"
-$env:APP="quotno_such_host"
-python client.py
-```
+This implementation provides a baseline for understanding the lower-level networking behavior abstracted by REST and gRPC.
 
-```
-socket.gaierror: [Errno 11001] getaddrinfo failed
-```
+## REST API
 
-#### Code Rationale
+The REST implementation uses **Flask**, **HTTP**, and **JSON** to expose CRUD operations for user resources.
 
-The **socket implementation** demonstrates the most fundamental synchronous request–response model.
+### Endpoints
 
-- The **server**:
-  
-  - Uses `socket.accept()` (blocking call) to wait for a connection.
-  - Uses `recv()` (blocking call) to wait for incoming data.
-  - Processes the message and returns a response with `send()` before moving to the next client.
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/users` | Retrieve all users |
+| `GET` | `/api/users/<id>` | Retrieve a user |
+| `POST` | `/api/users` | Create a user |
+| `PUT` | `/api/users/<id>` | Update a user |
+| `DELETE` | `/api/users/<id>` | Delete a user |
 
-- The **client**:
-  
-  - Uses `connect()` to establish a connection.
-  - Sends a message synchronously and waits for a response before continuing.
-  - Includes error handling for `ConnectionRefusedError`, `socket.gaierror`, and timeouts.
+The API also handles invalid requests and missing resources.
 
-This phase verifies:
-
-- **Connection establishment**
-- **Message transmission**
-- **Error handling for invalid endpoints**
-
-The client and server exchange data **synchronously**: each operation blocks until completion, ensuring a one-to-one response cycle.
-
-✅ **Conclusion:**  
-This confirms that the socket implementation correctly supports blocking synchronous request–response and proper exception handling.
-
----
-
-### Phase 2: REST API Implementation
-
-**Tech Stack:** Flask + HTTP/1.1 + JSON
-
-The REST service implements synchronous CRUD endpoints under `/api/users`.  
-Each request blocks until the Flask server completes and returns a JSON response.
-
-#### Example Endpoints
-
-| Method | Path              | Description       |
-| ------ | ----------------- | ----------------- |
-| GET    | `/api/users`      | Get all users     |
-| GET    | `/api/users/<id>` | Get user by ID    |
-| POST   | `/api/users`      | Create a new user |
-| PUT    | `/api/users/<id>` | Update a user     |
-| DELETE | `/api/users/<id>` | Delete a user     |
-
-#### Test Cases
-
-**1️⃣ Create User**
-
-```bash
-curl.exe -X POST http://127.0.0.1:5000/api/users -H "Content-Type: application/json" -d "{\`"name\`":\`"TestUser\`",\`"email\`":\`"test@example.com\`"}"Response:
+```text
+Client
+  │
+  │ HTTP + JSON
+  ▼
+Flask REST API
+  │
+  │ CRUD operation
+  ▼
+JSON Response
 ```
 
-```json
-{"email":"test@example.com","id":"159aeeae","name":"TestUser"}
+Compared with raw sockets, REST provides a standardized application-level interface through HTTP methods, resource-oriented endpoints, status codes, and JSON serialization.
+
+## gRPC
+
+The gRPC implementation exposes equivalent CRUD operations through a strongly typed service contract defined in Protocol Buffers.
+
+```text
+Client
+  │
+  │ gRPC
+  │ Protocol Buffers
+  ▼
+UserService
+  │
+  │ RPC
+  ▼
+Response
 ```
 
-**2️⃣ Get User**
+The service definition is stored in:
 
-```bash
-curl.exe http://127.0.0.1:5000/api/users/1
+```text
+grpc/proto/user_service.proto
 ```
 
-Response:
+Generated Python stubs are used by both the client and server.
 
-```json
-{"email":"test@example.com","id":"159aeeae","name":"TestUser"}
-```
+The implementation demonstrates:
 
-**3️⃣ Update User**
+- Protocol Buffer message definitions.
+- Generated client and server interfaces.
+- Synchronous RPC calls.
+- Structured gRPC error handling.
+- Binary serialization.
 
-```bash
-curl.exe -X PUT http://127.0.0.1:5000/api/users/1 -H "Content-Type: application/json" -d "{\`"name\`":\`"UpdatedUser\`",\`"email\`":\`"updated@example.com\`"}"Response:
-```
+## REST vs gRPC Benchmark
 
-```json
-{"message":"User successfully updated"}
-```
+A benchmark was implemented to compare REST and gRPC under the same environment.
 
-**4️⃣ Delete User**
+The benchmark executes **100 complete CRUD cycles** against each service.
 
-```bash
-curl.exe -X DELETE http://127.0.0.1:5000/api/users/1
-```
-
-Response: 
-
-```
-204 No Content
-```
-
-**5️⃣ Invalid Request Example**
-
-```bash
-curl.exe http://127.0.0.1:5000/api/users/9999
-```
-
-Response:
-
-```json
-{"error":"Resource not found"}
-```
-
-#### Code Rationale
-
-This **Flask-based REST API** provides synchronous CRUD endpoints for `/api/users`.
-
-- Each route handler executes in a blocking manner:
-  
-  - The client sends an HTTP request.
-  
-  - The Flask app processes it and sends a JSON response.
-  
-  - The client waits for the response before proceeding.
-
-Key features:
-
-- Validates JSON headers (`Content-Type: application/json`)
-
-- Handles missing data and nonexistent resources
-
-- Uses `models.py` to manage in-memory data
-
-This implementation illustrates **synchronous HTTP communication** — the client must wait for the server’s full response before continuing execution.
-
-✅ **Conclusion:**  
-The REST service clearly demonstrates synchronous, blocking request–response behavior through standard HTTP methods and JSON data exchange.
-
----
-
-### Phase 3: gRPC Implementation
-
-**Tech Stack:** Python gRPC + Protocol Buffers
-
-The gRPC phase provides high-performance, strongly typed synchronous RPC communication.  
-All messages and services are defined in `user_service.proto`, compiled into generated Python modules.
-
-#### Server (`server.py`)
-
-```python
-class UserService(user_service_pb2_grpc.UserServiceServicer):
- def CreateUser(self, request, context):
- new_user = user_service_pb2.User(id="1", name=request.name, email=request.email)
- return new_user
-```
-
-**Server Run Output:**
-
-```textile
-gRPC server starting on port 50051...
-Server is ready and listening for requests
-```
-
-#### Client (`client.py`)
-
-```python
-with grpc.insecure_channel("localhost:50051") as channel:
- stub = user_service_pb2_grpc.UserServiceStub(channel)
- user = stub.CreateUser(user_service_pb2.CreateUserRequest(name="TestUser", email="test@example.com"))
- print(user)
-```
-
-**Output:**
-
-```textile
-Created: id: "1" name: "TestUser" email: "test@example.com"
-Got: id: "1" name: "TestUser" email: "test@example.com"
-Updated: id: "1" name: "UpdatedUser" email: "updated@example.com"
-Deleted user ID: 1
-```
-
-#### Code Rationale
-
-The **gRPC service** defines synchronous RPC calls via `user_service.proto` and auto-generated stubs.
-
-- The **server** (`server.py`):
-  
-  - Implements `UserServiceServicer` for Create, Get, Update, Delete operations.
-  
-  - Uses blocking RPC calls — each method must return before another call can begin for that client.
-  
-  - Structured error handling using `context.set_code()` (e.g., `NOT_FOUND`, `INVALID_ARGUMENT`).
-
-- The **client** (`client.py`):
-  
-  - Invokes RPC methods synchronously using `UserServiceStub`.
-  
-  - Waits for responses before making subsequent calls.
-  
-  - Validates success and failure scenarios.
-
-gRPC provides **type safety**, **binary serialization (Protocol Buffers)**, and **low latency** while still demonstrating synchronous request–response logic.
-
-✅ **Conclusion:**  
-Each RPC is blocking until the server response arrives, ensuring strict synchronous behavior while leveraging binary serialization via Protocol Buffers.
-
----
-
-### Phase 4: REST vs gRPC Benchmark Comparison
-
-#### Benchmark Command
+Run the benchmark with:
 
 ```bash
 python benchmark.py
 ```
 
-#### Output
+### Results
 
-```textile
-Performance Benchmark - 100 CRUD cycles
-==============================================
-REST service: available
-gRPC service: available
-Running 100 complete CRUD operations...
-REST Results:
- Total time: 0.631 seconds
- Average per operation: 6.31 ms
-gRPC Results:
- Total time: 0.090 seconds
- Average per operation: 0.90 ms
-Performance Comparison:
- gRPC is 7.03x faster than REST
- Conclusion: gRPC demonstrates better performance
+| Protocol | Total Time | Average per Operation |
+|---|---:|---:|
+| REST | 0.631 s | 6.31 ms |
+| gRPC | 0.090 s | 0.90 ms |
+
+In this experiment, gRPC completed the workload approximately **7.03× faster** than REST.
+
+```text
+REST   6.31 ms/op  ███████████████████████████████
+gRPC   0.90 ms/op  ████
 ```
 
-✅ **Performance Summary**
+These measurements are specific to this experiment and local test environment rather than a general performance guarantee.
 
-| Method | Avg Time (ms) | Speedup          | Remarks                              |
-| ------ | ------------- | ---------------- | ------------------------------------ |
-| REST   | 6.31          | –                | Human-readable JSON, slower HTTP/1.1 |
-| gRPC   | 0.90          | **7.03× faster** | Binary, compact, efficient           |
+The observed difference is consistent with several architectural differences between the two implementations:
 
-#### Performance Analysis
+- REST exchanges JSON payloads over HTTP.
+- gRPC uses Protocol Buffers for binary serialization.
+- gRPC provides a compact, strongly typed service contract.
 
-- Both REST and gRPC follow **synchronous request–response** communication.
+## Running the Experiment
 
-- REST uses **HTTP/1.1 + JSON**, which introduces overhead due to text parsing and larger payloads.
+### Start the services
 
-- gRPC uses **HTTP/2 + Protocol Buffers**, offering:
-  
-  - Binary serialization (smaller message size)
-  
-  - Persistent connections
-  
-  - Multiplexed streams for lower latency
+From the `communication` directory:
 
-**Result:**
+```bash
+docker compose up --build
+```
 
-- gRPC completed 100 CRUD operations **7× faster** than REST.
+This starts the containerized communication services defined in `docker-compose.yml`.
 
-- The performance gain arises from **reduced serialization time** and **more efficient transport**.
+### Run the benchmark
 
-Thus, gRPC demonstrates clear advantages in speed and efficiency for synchronous RPC communication.
+Once the REST and gRPC services are available:
 
----
+```bash
+python benchmark.py
+```
 
-## Conclusion
+The script performs repeated CRUD operations against both implementations and reports total and average execution times.
 
-- **Socket** — demonstrated low-level synchronous blocking communication.
+## Key Takeaways
 
-- **REST** — provided structured synchronous CRUD over HTTP.
+This experiment demonstrates how the same synchronous request-response model can be implemented at different abstraction levels.
 
-- **gRPC** — achieved best performance via binary serialization and HTTP/2.
+**TCP sockets** provide direct control over network communication but require manual handling of connections, message formats, and failures.
 
-- **Benchmark** — confirmed gRPC is ~7× faster than REST.
+**REST** provides a simple and widely understood HTTP interface with human-readable JSON payloads, at the cost of additional protocol and serialization overhead.
 
-- **Docker** — ensured isolated, reproducible testing environments.
+**gRPC** provides strongly typed service contracts and compact binary serialization. In this experiment, it also produced substantially lower request latency than the REST implementation.
 
-This project collectively illustrates the fundamental mechanics and trade-offs of synchronous communication patterns in distributed systems.
+The comparison highlights an important distributed-systems design principle: communication mechanisms should be selected based on system requirements rather than abstraction level or raw performance alone.
 
----
+## Tech Stack
 
-## References
-
-- [Python socket](https://docs.python.org/3/library/socket.html)
-
-- [Flask Documentation](https://flask.palletsprojects.com/)
-
-- [gRPC Python Docs](https://grpc.io/docs/languages/python/quickstart/)
-
-- [Docker Compose Guide](https://docs.docker.com/compose/)
+- Python
+- TCP Sockets
+- Flask
+- REST / HTTP
+- gRPC
+- Protocol Buffers
+- Docker
+- Docker Compose
