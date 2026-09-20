@@ -20,7 +20,7 @@ env/
 .DS_Store
 Thumbs.db
 
-# Testing
+# Testing / coverage
 .pytest_cache/
 .coverage
 htmlcov/
